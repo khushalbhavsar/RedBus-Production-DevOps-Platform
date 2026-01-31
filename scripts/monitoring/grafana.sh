@@ -1,28 +1,34 @@
 #!/bin/bash
-# Script to install Grafana on a Linux instance
+# Script to install Grafana on Amazon Linux
 
-# Update package list and install dependencies
-sudo apt-get install -y apt-transport-https software-properties-common wget
+# Update system packages
+sudo yum update -y
 
-# Create a directory for Grafana's GPG key
-sudo mkdir -p /etc/apt/keyrings/
+# Install required dependencies
+sudo yum install -y wget
 
-# Add Grafana's GPG key
-wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+# Create Grafana repository file
+cat <<EOF | sudo tee /etc/yum.repos.d/grafana.repo
+[grafana]
+name=grafana
+baseurl=https://rpm.grafana.com
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.grafana.com/gpg.key
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+EOF
 
-# Add Grafana's repository to the sources list
-echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list
+# Install Grafana
+sudo yum install grafana -y
 
-# Update package lists
-sudo apt-get update -y
-
-# Install the latest OSS release of Grafana
-sudo apt-get install grafana -y
+# Reload systemd daemon
+sudo systemctl daemon-reload
 
 # Start and enable Grafana service
 sudo systemctl start grafana-server
 sudo systemctl enable grafana-server
 
-
-#After installation, you can access Grafana at:
+# After installation, you can access Grafana at:
 # http://your-server-ip:3000 (default user: admin, password: admin)

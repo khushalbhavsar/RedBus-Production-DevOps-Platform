@@ -1,17 +1,23 @@
 #!/bin/bash
-# Script to install Trivy on an instance
+# Script to install Trivy on Amazon Linux
+
+# Update system packages
+sudo yum update -y
 
 # Install necessary dependencies
-sudo apt-get install wget apt-transport-https gnupg lsb-release -y
+sudo yum install -y wget
 
-# Add the Trivy repository key
-wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-
-# Add the Trivy repository to the sources list
-echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-
-# Update package lists
-sudo apt-get update -y
+# Create Trivy repository file
+cat <<EOF | sudo tee /etc/yum.repos.d/trivy.repo
+[trivy]
+name=Trivy repository
+baseurl=https://aquasecurity.github.io/trivy-repo/rpm/releases/\$basearch/
+gpgcheck=0
+enabled=1
+EOF
 
 # Install Trivy
-sudo apt-get install trivy -y
+sudo yum install trivy -y
+
+# Verify installation
+trivy --version
