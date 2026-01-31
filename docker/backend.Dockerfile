@@ -1,6 +1,9 @@
 # Backend Dockerfile - Node.js Express API
 FROM node:18-alpine
 
+# Update Alpine packages to fix security vulnerabilities (CVE-2025-15467)
+RUN apk update && apk upgrade --no-cache libcrypto3 libssl3
+
 # Create app directory
 WORKDIR /app
 

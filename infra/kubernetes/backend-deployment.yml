@@ -47,3 +47,8 @@ spec:
                 secretKeyRef:
                   name: redbus-secrets
                   key: mongodb-uri
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: redbus-secrets
+                  key: stripe-secret-key
