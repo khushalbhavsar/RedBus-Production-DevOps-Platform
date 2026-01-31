@@ -249,9 +249,20 @@ pipeline {
                         kubectl set image deployment/frontend-deployment frontend=${FRONTEND_IMAGE}:${BUILD_NUMBER} -n redbus
                         kubectl set image deployment/backend-deployment backend=${BACKEND_IMAGE}:${BUILD_NUMBER} -n redbus
                         
-                        # Wait for rollout to complete
-                        kubectl rollout status deployment/frontend-deployment -n redbus --timeout=300s
-                        kubectl rollout status deployment/backend-deployment -n redbus --timeout=300s
+                        # Wait for rollout to complete with increased timeout
+                        kubectl rollout status deployment/frontend-deployment -n redbus --timeout=600s
+                        kubectl rollout status deployment/backend-deployment -n redbus --timeout=600s || {
+                            echo "Backend deployment failed. Checking pod status..."
+                            kubectl get pods -n redbus -l app=redbus-backend
+                            kubectl describe pods -n redbus -l app=redbus-backend | tail -50
+                            kubectl logs -n redbus -l app=redbus-backend --tail=50 || true
+                            exit 1
+                        }
+                        
+                        # Show deployment status
+                        echo "✅ Deployment successful!"
+                        kubectl get pods -n redbus
+                        kubectl get svc -n redbus
                     '''
                 }
             }

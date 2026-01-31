@@ -14,6 +14,12 @@ const stripe = require("stripe")(stripeKey || "sk_test_placeholder");
 mongoose.pluralize(null);
 app.use(express.json());
 app.use(cors());
+
+// Health check endpoint for Kubernetes
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
 const busRoutes = require("./routes/bus");
 const bookingRoutes = require("./routes/booking");
 const customerRoutes = require("./routes/customer");
@@ -67,19 +73,14 @@ const connect = () => {
     console.log('MongoDB connection established.');
   });
 
-  return mongoose.connect(
-    "mongodb+srv://redbus_db_user_1:umJkhSujb8dZoc2a@redbuscnstructweek.bujg6.mongodb.net/redbus?retryWrites=true&w=majority",
-    {
-      useCreateIndex: true,
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      useFindAndModify: false,
-    }
-  );
+  // Use MONGODB_URI from environment or fallback to default
+  const mongoUri = process.env.MONGODB_URI || "mongodb+srv://redbus_db_user_1:umJkhSujb8dZoc2a@redbuscnstructweek.bujg6.mongodb.net/redbus?retryWrites=true&w=majority";
+
+  return mongoose.connect(mongoUri);
 };
 
 
-const port = process.env.PORT || 3020;
+const port = process.env.PORT || 5000;
 let host = process.env.HOST;
 
 const start = async () => {
