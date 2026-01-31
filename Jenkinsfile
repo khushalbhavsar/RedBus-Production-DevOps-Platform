@@ -137,16 +137,18 @@ pipeline {
                         // Create output directory first
                         sh 'mkdir -p dependency-check-report'
                         
-                        dependencyCheck additionalArguments: '''
-                            --scan .
-                            --format HTML
-                            --format JSON
-                            --format XML
-                            --out dependency-check-report
-                            --prettyPrint
-                            --disableYarnAudit
-                            --noupdate
-                        ''', odcInstallation: 'OWASP-Dependency-Check'
+                        withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                            dependencyCheck additionalArguments: """
+                                --scan .
+                                --format HTML
+                                --format JSON
+                                --format XML
+                                --out dependency-check-report
+                                --prettyPrint
+                                --disableYarnAudit
+                                --nvdApiKey ${NVD_API_KEY}
+                            """, odcInstallation: 'OWASP-Dependency-Check'
+                        }
                         
                         dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
                     } catch (Exception e) {
