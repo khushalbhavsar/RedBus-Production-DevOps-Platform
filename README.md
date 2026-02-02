@@ -63,39 +63,57 @@
 ## 🏗 Architecture
 
 ```
-                                    ┌─────────────────────────────────────────────────────────────┐
-                                    │                        AWS CLOUD                            │
-                                    │  ┌───────────────────────────────────────────────────────┐  │
-                                    │  │                    VPC (10.0.0.0/16)                  │  │
-                                    │  │                                                       │  │
-                                    │  │   ┌─────────────────────────────────────────────┐    │  │
-                                    │  │   │              EKS CLUSTER                     │    │  │
-                                    │  │   │                                             │    │  │
-┌──────────┐    ┌──────────┐        │  │   │   ┌─────────────┐    ┌─────────────┐       │    │  │
-│  Users   │───▶│  Ingress │───────▶│  │   │   │  Frontend   │    │  Backend    │       │    │  │
-│          │    │ (ALB)    │        │  │   │   │  (React)    │◀──▶│  (Node.js)  │       │    │  │
-└──────────┘    └──────────┘        │  │   │   │  Port: 80   │    │  Port: 5000 │       │    │  │
-                                    │  │   │   └─────────────┘    └──────┬──────┘       │    │  │
-                                    │  │   │                             │              │    │  │
-                                    │  │   └─────────────────────────────┼──────────────┘    │  │
-                                    │  │                                 │                   │  │
-                                    │  └─────────────────────────────────┼───────────────────┘  │
-                                    │                                    │                      │
-                                    │                           ┌────────▼────────┐             │
-                                    │                           │    MongoDB      │             │
-                                    │                           │   (Atlas/EC2)   │             │
-                                    │                           └─────────────────┘             │
-                                    └─────────────────────────────────────────────────────────────┘
+                                    ┌──────────────────────────────────────────────────────────────────────┐
+                                    │                            AWS CLOUD                                 │
+                                    │  ┌────────────────────────────────────────────────────────────────┐  │
+                                    │  │                      VPC (10.0.0.0/16)                         │  │
+                                    │  │                                                                │  │
+                                    │  │  ┌──────────────────┐    ┌──────────────────┐                  │  │
+                                    │  │  │  Public Subnets  │    │ Private Subnets  │                  │  │
+                                    │  │  │  (3 AZs)         │    │ (3 AZs)          │                  │  │
+                                    │  │  └────────┬─────────┘    └────────┬─────────┘                  │  │
+                                    │  │           │                       │                            │  │
+                                    │  │           │    ┌──────────────────┴───────────────────┐        │  │
+                                    │  │           │    │           EKS CLUSTER                │        │  │
+                                    │  │           │    │         (redbus-cluster)             │        │  │
+                                    │  │           │    │                                      │        │  │
+┌──────────┐    ┌──────────────┐    │  │           │    │  ┌────────────────────────────────┐ │        │  │
+│          │    │   Ingress    │    │  │           │    │  │     Namespace: redbus          │ │        │  │
+│  Users   │───▶│   (Nginx)    │────┼──┼───────────┼────┼──│                                │ │        │  │
+│          │    │              │    │  │           │    │  │  ┌──────────┐  ┌──────────┐   │ │        │  │
+└──────────┘    │  /  → :80    │    │  │           │    │  │  │ Frontend │  │ Backend  │   │ │        │  │
+                │  /api → :5000│    │  │           │    │  │  │ (React)  │  │(Node.js) │   │ │        │  │
+                └──────────────┘    │  │           │    │  │  │ nginx:80 │  │ :5000    │   │ │        │  │
+                                    │  │           │    │  │  │ 2 Pods   │  │ 2 Pods   │   │ │        │  │
+                                    │  │           │    │  │  └────┬─────┘  └────┬─────┘   │ │        │  │
+                                    │  │           │    │  │       │             │         │ │        │  │
+                                    │  │           │    │  └───────┼─────────────┼─────────┘ │        │  │
+                                    │  │           │    └──────────┼─────────────┼───────────┘        │  │
+                                    │  │           │               │             │                    │  │
+                                    │  │  ┌────────▼───────┐       │    ┌────────▼────────┐           │  │
+                                    │  │  │  NAT Gateway   │       │    │    MongoDB      │           │  │
+                                    │  │  └────────────────┘       │    │  (Atlas/EC2)    │           │  │
+                                    │  │                           │    └─────────────────┘           │  │
+                                    │  └───────────────────────────┼──────────────────────────────────┘  │
+                                    │                              │                                     │
+                                    │  ┌───────────────────────────┴──────────────────────────────────┐  │
+                                    │  │                         ECR                                  │  │
+                                    │  │  ┌─────────────────────┐  ┌─────────────────────┐            │  │
+                                    │  │  │  redbus-frontend    │  │  redbus-backend     │            │  │
+                                    │  │  └─────────────────────┘  └─────────────────────┘            │  │
+                                    │  └──────────────────────────────────────────────────────────────┘  │
+                                    └────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    CI/CD PIPELINE (Jenkins)                                     │
-│                                                                                                 │
-│  ┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐   ┌────────┐     │
-│  │Checkout│──▶│ Build  │──▶│ Test   │──▶│SonarQube──▶│ OWASP  │──▶│ Docker │──▶│Deploy  │     │
-│  │  Git   │   │  npm   │   │  Jest  │   │Analysis│   │  Check │   │ Build  │   │  K8s   │     │
-│  └────────┘   └────────┘   └────────┘   └────────┘   └────────┘   └────────┘   └────────┘     │
-│                                                                                                 │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    CI/CD PIPELINE (Jenkins)                                            │
+│                                                                                                        │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────┐ │
+│  │Checkout │─▶│Install  │─▶│  Test   │─▶│SonarQube│─▶│  OWASP  │─▶│ Trivy   │─▶│ Docker  │─▶│Deploy │ │
+│  │  Git    │  │  Deps   │  │ (Jest)  │  │Analysis │  │  Check  │  │  Scan   │  │Build/Push│  │ K8s  │ │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └───────┘ │
+│                                                                                                        │
+│  Additional Stages: Clean Workspace → Setup ECR → Quality Gate → Image Scan → Email Notification      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -152,7 +170,16 @@ redbus-devops/
 │   │   ├── frontend-service.yml      # Frontend service
 │   │   ├── backend-deployment.yml    # Backend deployment
 │   │   ├── backend-service.yml       # Backend service
-│   │   └── ingress.yml               # Ingress controller
+│   │   ├── ingress.yml               # Ingress controller
+│   │   └── 📁 monitoring/            # Monitoring stack
+│   │       ├── namespace.yml         # Monitoring namespace
+│   │       ├── prometheus-rbac.yml   # Prometheus RBAC
+│   │       ├── prometheus-configmap.yml
+│   │       ├── prometheus-deployment.yml
+│   │       ├── grafana-configmap.yml
+│   │       ├── grafana-deployment.yml
+│   │       ├── node-exporter.yml     # Node metrics
+│   │       └── kube-state-metrics.yml
 │   │
 │   └── 📁 terraform/                 # Terraform AWS setup
 │       ├── provider.tf               # AWS provider config
@@ -175,6 +202,7 @@ redbus-devops/
 │   │   ├── jenkins.sh                # Jenkins installation
 │   │   └── terraform.sh              # Terraform installation
 │   └── 📁 monitoring/
+│       ├── deploy-monitoring.sh      # Deploy monitoring to K8s
 │       ├── grafana.sh                # Grafana + Prometheus setup
 │       └── trivy.sh                  # Trivy scanner installation
 │
@@ -570,6 +598,18 @@ kubectl logs -f deployment/backend-deployment -n redbus
 | ConfigMap | redbus-config | - | - |
 | Secret | redbus-secrets | - | - |
 
+### Monitoring Resources (monitoring namespace)
+
+| Resource | Name | Type | Port |
+|----------|------|------|------|
+| Deployment | prometheus | Deployment | 30090 |
+| Deployment | grafana | Deployment | 30030 |
+| DaemonSet | node-exporter | DaemonSet | 9100 |
+| Deployment | kube-state-metrics | Deployment | 8080 |
+| ConfigMap | prometheus-config | ConfigMap | - |
+| ConfigMap | grafana-datasources | ConfigMap | - |
+| ServiceAccount | prometheus | RBAC | - |
+
 ### Scaling
 
 ```bash
@@ -611,7 +651,8 @@ terraform output
 | Subnets | 3 Public + 3 Private subnets |
 | NAT Gateway | For private subnet internet access |
 | EKS Cluster | Managed Kubernetes cluster |
-| Node Group | 2 t3.medium instances (auto-scaling 1-5) |
+| Node Group | t3.medium instances (min:1, max:5, desired:2) |
+| Kubernetes Version | 1.29 |
 | ECR | Container registries for images |
 | IAM Roles | EKS cluster and node roles |
 
@@ -626,7 +667,37 @@ terraform destroy
 
 ## 📊 Monitoring & Observability
 
-### Prometheus Setup
+### Option 1: Deploy Using Project Manifests (Recommended)
+
+This project includes custom Kubernetes manifests for monitoring:
+
+```bash
+# Deploy complete monitoring stack using the provided script
+chmod +x scripts/monitoring/deploy-monitoring.sh
+./scripts/monitoring/deploy-monitoring.sh
+
+# Or manually apply manifests
+kubectl apply -f infra/kubernetes/monitoring/
+```
+
+**Access URLs (NodePort):**
+- Prometheus: `http://<NODE_IP>:30090`
+- Grafana: `http://<NODE_IP>:30030`
+
+**Grafana Credentials:**
+- Username: `admin`
+- Password: `admin123`
+
+### Monitoring Stack Components
+
+| Component | Purpose | Port |
+|-----------|---------|------|
+| Prometheus | Metrics collection & storage | 30090 |
+| Grafana | Visualization & dashboards | 30030 |
+| Node Exporter | Host-level metrics | 9100 |
+| Kube State Metrics | Kubernetes object metrics | 8080 |
+
+### Option 2: Deploy Using Helm
 
 ```bash
 # Install Prometheus using Helm
@@ -640,7 +711,7 @@ helm install prometheus prometheus-community/prometheus \
   --set pushgateway.enabled=false
 ```
 
-### Grafana Setup
+### Grafana Setup (Helm Alternative)
 
 ```bash
 # Install Grafana using Helm
@@ -725,34 +796,86 @@ Production: https://api.redbus.yourdomain.com/v1/api
 
 ### Endpoints
 
+#### Health Check
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/buses` | Get all buses |
-| GET | `/buses/:id` | Get bus by ID |
-| POST | `/buses` | Create new bus |
-| GET | `/routes` | Get all routes |
-| POST | `/routes` | Create new route |
-| GET | `/customers` | Get all customers |
-| POST | `/customers` | Create customer |
-| GET | `/bookings` | Get all bookings |
-| POST | `/bookings` | Create booking |
-| GET | `/busservices` | Get bus services |
-| POST | `/busservices` | Create bus service |
+| GET | `/health` | Kubernetes health check endpoint |
 
-### Example Request
+#### Routes
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/api/routes` | Get all routes |
+| GET | `/v1/api/routes/:departure/:arrival/:date` | Get route by departure, arrival & date |
+
+#### Bus Services
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/api/busservice` | Get all bus services |
+| GET | `/v1/api/busservice/:id` | Get bus service by ID |
+| POST | `/v1/api/busservice` | Create bus service |
+| DELETE | `/v1/api/busservice/:id` | Delete bus service |
+
+#### Bookings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/api/booking` | Create a booking |
+| GET | `/v1/api/booking/:id` | Get booking by ID |
+
+#### Bus Hire
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/api/bookingHire` | Create bus hire booking |
+| GET | `/v1/api/bookingHire/:email` | Get bus hire by email |
+
+#### Customers
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/api/customers` | Create new customer |
+
+#### Payments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/api/stripe-payments` | Process Stripe payment |
+
+### Example Requests
 
 ```bash
-# Get all buses
-curl http://localhost:5000/v1/api/buses
+# Health check
+curl http://localhost:5000/health
+
+# Get all routes
+curl http://localhost:5000/v1/api/routes
+
+# Get route by departure, arrival & date
+curl http://localhost:5000/v1/api/routes/Mumbai/Pune/2026-02-15
+
+# Get all bus services
+curl http://localhost:5000/v1/api/busservice
 
 # Create a booking
-curl -X POST http://localhost:5000/v1/api/bookings \
+curl -X POST http://localhost:5000/v1/api/booking \
   -H "Content-Type: application/json" \
   -d '{
-    "customerId": "123",
     "busId": "456",
     "seats": ["A1", "A2"],
     "totalFare": 500
+  }'
+
+# Create a customer
+curl -X POST http://localhost:5000/v1/api/customers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "9876543210"
+  }'
+
+# Process payment
+curl -X POST http://localhost:5000/v1/api/stripe-payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product": { "name": "Bus Ticket", "price": 500 },
+    "token": { "id": "tok_xxx", "email": "user@example.com" }
   }'
 ```
 
@@ -765,10 +888,13 @@ curl -X POST http://localhost:5000/v1/api/bookings \
 ```env
 # Server
 PORT=5000
+HOST=0.0.0.0
 NODE_ENV=production
 
 # Database
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/redbus
+DATABASE=mongodb+srv://username:<PASSWORD>@cluster.mongodb.net/redbus
+DATABASE_PASSWORD=your_password
 
 # Stripe Payment
 STRIPE_SECRET_KEY=sk_test_xxxxx
@@ -785,6 +911,20 @@ REACT_APP_GOOGLE_CLIENT_ID=your-google-client-id
 
 # Stripe
 REACT_APP_STRIPE_KEY=pk_test_xxxxx
+```
+
+### Kubernetes ConfigMap/Secrets
+
+Environment variables are managed via Kubernetes resources:
+
+```yaml
+# ConfigMap (redbus-config)
+BACKEND_URL: "http://backend-service:5000"
+NODE_ENV: "production"
+
+# Secrets (redbus-secrets)
+mongodb-uri: <base64-encoded-uri>
+stripe-secret-key: <base64-encoded-key>
 ```
 
 ---
