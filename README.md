@@ -1012,8 +1012,8 @@ This project is for **educational and demonstration purposes**.
 
 **Khushal Bhavsar**
 
-- GitHub: [@yourusername](https://github.com/yourusername)
-- LinkedIn: [Your Profile](https://linkedin.com/in/yourprofile)
+- GitHub: [@khushalbhavsar](https://github.com/khushalbhavsar)
+- LinkedIn: [Khushal Bhavsar](https://www.linkedin.com/in/khushal-bhavsar-/)
 
 ---
 
