@@ -36,9 +36,9 @@ pipeline {
                         env.FRONTEND_IMAGE = "${env.ECR_REGISTRY}/redbus-frontend"
                         env.BACKEND_IMAGE = "${env.ECR_REGISTRY}/redbus-backend"
                         
-                        echo "📦 ECR Registry: ${env.ECR_REGISTRY}"
-                        echo "🖼️ Frontend Image: ${env.FRONTEND_IMAGE}"
-                        echo "🖼️ Backend Image: ${env.BACKEND_IMAGE}"
+                        echo "ECR Registry: ${env.ECR_REGISTRY}"
+                        echo "Frontend Image: ${env.FRONTEND_IMAGE}"
+                        echo "Backend Image: ${env.BACKEND_IMAGE}"
                     }
                 }
             }
@@ -60,7 +60,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo '📥 Checking out source code...'
+                echo 'Checking out source code...'
                 checkout scm
             }
         }
@@ -105,7 +105,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                echo '🔍 Running SonarQube code quality analysis...'
+                echo 'Running SonarQube code quality analysis...'
                 withSonarQubeEnv('SonarQube') {
                     sh '''
                         ${SONAR_SCANNER_HOME}/bin/sonar-scanner \
@@ -122,18 +122,18 @@ pipeline {
 
         stage('SonarQube Quality Gate') {
             steps {
-                echo '⏳ Waiting for SonarQube Quality Gate...'
+                echo 'Waiting for SonarQube Quality Gate...'
                 script {
                     timeout(time: 5, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
                         if (qg.status != 'OK') {
-                            echo "⚠️ Quality Gate status: ${qg.status}"
-                            echo "⚠️ SonarQube Quality Gate failed but continuing pipeline..."
-                            echo "📊 Review issues at: ${env.SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
+                            echo "Quality Gate status: ${qg.status}"
+                            echo "SonarQube Quality Gate failed but continuing pipeline..."
+                            echo "Review issues at: ${env.SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
                             // Mark as unstable instead of failing
                             unstable('SonarQube Quality Gate failed')
                         } else {
-                            echo "✅ Quality Gate passed!"
+                            echo "Quality Gate passed!"
                         }
                     }
                 }
@@ -142,7 +142,7 @@ pipeline {
 
         stage('OWASP Dependency Check') {
             steps {
-                echo '🛡️ Running OWASP Dependency Check...'
+                echo 'Running OWASP Dependency Check...'
                 script {
                     try {
                         // Create output directory first
@@ -163,7 +163,7 @@ pipeline {
                         
                         dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
                     } catch (Exception e) {
-                        echo "⚠️ OWASP Dependency Check skipped: ${e.getMessage()}"
+                        echo "OWASP Dependency Check skipped: ${e.getMessage()}"
                         echo "Note: Trivy security scan provides similar coverage"
                     }
                 }
@@ -172,7 +172,7 @@ pipeline {
 
         stage('Security Scan - Trivy') {
             steps {
-                echo '🔒 Running security scan with Trivy...'
+                echo 'Running security scan with Trivy...'
                 sh '''
                     trivy fs --severity HIGH,CRITICAL --format table -o trivy-fs-report.txt .
                     trivy fs --severity HIGH,CRITICAL --exit-code 0 .
@@ -184,7 +184,7 @@ pipeline {
             parallel {
                 stage('Build Frontend Image') {
                     steps {
-                        echo '🐳 Building Frontend Docker image...'
+                        echo 'Building Frontend Docker image...'
                         sh '''
                             docker build -f docker/frontend.Dockerfile -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} .
                             docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${FRONTEND_IMAGE}:latest
@@ -193,7 +193,7 @@ pipeline {
                 }
                 stage('Build Backend Image') {
                     steps {
-                        echo '🐳 Building Backend Docker image...'
+                        echo 'Building Backend Docker image...'
                         sh '''
                             docker build -f docker/backend.Dockerfile -t ${BACKEND_IMAGE}:${BUILD_NUMBER} .
                             docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${BACKEND_IMAGE}:latest
@@ -226,7 +226,7 @@ pipeline {
 
         stage('Push Docker Images') {
             steps {
-                echo '📤 Pushing Docker images to ECR...'
+                echo 'Pushing Docker images to ECR...'
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     sh '''
                         # Login to ECR
@@ -244,7 +244,7 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                echo '🚀 Deploying to EKS cluster...'
+                echo 'Deploying to EKS cluster...'
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
                     sh '''
                         # Configure kubectl
@@ -271,7 +271,7 @@ pipeline {
                         }
                         
                         # Show deployment status
-                        echo "✅ Deployment successful!"
+                        echo "Deployment successful!"
                         kubectl get pods -n redbus
                         kubectl get svc -n redbus
                     '''
@@ -282,7 +282,7 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleaning up...'
+            echo 'Cleaning up...'
             sh 'docker system prune -f || true'
             
             // Archive reports
@@ -300,33 +300,33 @@ pipeline {
             ])
         }
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo 'Pipeline completed successfully!'
             emailext(
-                subject: "✅ SUCCESS: RedBus Pipeline - Build #${BUILD_NUMBER}",
+                subject: "SUCCESS: RedBus Pipeline - Build #${BUILD_NUMBER}",
                 body: """
                     <html>
                     <body>
-                        <h2 style="color: #28a745;">🎉 Pipeline Successful!</h2>
+                        <h2 style="color: #28a745;">Pipeline Successful!</h2>
                         <p><strong>Project:</strong> RedBus DevOps</p>
                         <p><strong>Build Number:</strong> ${BUILD_NUMBER}</p>
                         <p><strong>Build URL:</strong> <a href="${BUILD_URL}">${BUILD_URL}</a></p>
                         <p><strong>Git Branch:</strong> ${env.GIT_BRANCH ?: 'N/A'}</p>
                         <p><strong>Git Commit:</strong> ${env.GIT_COMMIT ?: 'N/A'}</p>
                         <hr>
-                        <h3>📊 Build Summary:</h3>
+                        <h3>Build Summary:</h3>
                         <ul>
-                            <li>✅ Code Checkout - Passed</li>
-                            <li>✅ Install Dependencies - Passed</li>
-                            <li>✅ Run Tests - Passed</li>
-                            <li>✅ SonarQube Analysis - Passed</li>
-                            <li>✅ OWASP Dependency Check - Passed</li>
-                            <li>✅ Trivy Security Scan - Passed</li>
-                            <li>✅ Docker Build - Passed</li>
-                            <li>✅ Docker Push - Passed</li>
-                            <li>✅ Kubernetes Deployment - Passed</li>
+                            <li>Code Checkout - Passed</li>
+                            <li>Install Dependencies - Passed</li>
+                            <li>Run Tests - Passed</li>
+                            <li>SonarQube Analysis - Passed</li>
+                            <li>OWASP Dependency Check - Passed</li>
+                            <li>Trivy Security Scan - Passed</li>
+                            <li>Docker Build - Passed</li>
+                            <li>Docker Push - Passed</li>
+                            <li>Kubernetes Deployment - Passed</li>
                         </ul>
                         <hr>
-                        <h3>🐳 Docker Images:</h3>
+                        <h3>Docker Images:</h3>
                         <ul>
                             <li>Frontend: ${FRONTEND_IMAGE}:${BUILD_NUMBER}</li>
                             <li>Backend: ${BACKEND_IMAGE}:${BUILD_NUMBER}</li>
@@ -343,24 +343,24 @@ pipeline {
             )
         }
         failure {
-            echo '❌ Pipeline failed!'
+            echo 'Pipeline failed!'
             emailext(
-                subject: "❌ FAILED: RedBus Pipeline - Build #${BUILD_NUMBER}",
+                subject: "FAILED: RedBus Pipeline - Build #${BUILD_NUMBER}",
                 body: """
                     <html>
                     <body>
-                        <h2 style="color: #dc3545;">⚠️ Pipeline Failed!</h2>
+                        <h2 style="color: #dc3545;">Pipeline Failed!</h2>
                         <p><strong>Project:</strong> RedBus DevOps</p>
                         <p><strong>Build Number:</strong> ${BUILD_NUMBER}</p>
                         <p><strong>Build URL:</strong> <a href="${BUILD_URL}">${BUILD_URL}</a></p>
                         <p><strong>Git Branch:</strong> ${env.GIT_BRANCH ?: 'N/A'}</p>
                         <p><strong>Git Commit:</strong> ${env.GIT_COMMIT ?: 'N/A'}</p>
                         <hr>
-                        <h3>🔴 Action Required:</h3>
+                        <h3>Action Required:</h3>
                         <p>Please check the build logs for details:</p>
                         <p><a href="${BUILD_URL}console">${BUILD_URL}console</a></p>
                         <hr>
-                        <h3>📋 Possible Issues:</h3>
+                        <h3>Possible Issues:</h3>
                         <ul>
                             <li>Code quality issues detected by SonarQube</li>
                             <li>Security vulnerabilities found by OWASP/Trivy</li>
@@ -380,13 +380,13 @@ pipeline {
             )
         }
         unstable {
-            echo '⚠️ Pipeline unstable!'
+            echo 'Pipeline unstable!'
             emailext(
-                subject: "⚠️ UNSTABLE: RedBus Pipeline - Build #${BUILD_NUMBER}",
+                subject: "UNSTABLE: RedBus Pipeline - Build #${BUILD_NUMBER}",
                 body: """
                     <html>
                     <body>
-                        <h2 style="color: #ffc107;">⚠️ Pipeline Unstable!</h2>
+                        <h2 style="color: #ffc107;">Pipeline Unstable!</h2>
                         <p><strong>Project:</strong> RedBus DevOps</p>
                         <p><strong>Build Number:</strong> ${BUILD_NUMBER}</p>
                         <p><strong>Build URL:</strong> <a href="${BUILD_URL}">${BUILD_URL}</a></p>
