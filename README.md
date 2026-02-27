@@ -16,6 +16,13 @@
 
 - [Project Overview](#-project-overview)
 - [Architecture](#-architecture)
+  - [High-Level System Architecture](#1-high-level-system-architecture)
+  - [CI/CD Pipeline Architecture](#2-cicd-pipeline-architecture-jenkins)
+  - [Kubernetes Cluster Architecture](#3-kubernetes-cluster-architecture)
+  - [Infrastructure Provisioning (Terraform)](#4-infrastructure-provisioning-terraform)
+  - [Monitoring & Observability](#5-monitoring--observability-architecture)
+  - [Application Architecture](#6-application-architecture-react--nodejs)
+  - [Docker Build Architecture](#7-docker-build-architecture)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
 - [Prerequisites](#-prerequisites)
@@ -62,7 +69,513 @@
 
 ## 🏗 Architecture
 
-![Project Flow](Docs/ProjectFlow.png)
+<!-- ![Project Flow](Docs/ProjectFlow.png) -->
+
+### 1. High-Level System Architecture
+
+```mermaid
+flowchart TB
+    subgraph Users["🌐 Users"]
+        Browser["🖥️ Browser"]
+    end
+
+    subgraph DNS["DNS & TLS"]
+        Route53["Amazon Route 53\nredbus.yourdomain.com"]
+        ACM["AWS ACM\n(TLS Certificate)"]
+    end
+
+    subgraph AWS["☁️ AWS Cloud (us-east-1)"]
+        subgraph VPC["VPC – redbus-vpc"]
+            subgraph PubSubnet["Public Subnets"]
+                NATGateway["NAT Gateway"]
+                ALB["Application Load Balancer\n(Ingress Controller)"]
+            end
+
+            subgraph EKS["Amazon EKS – redbus-cluster"]
+                subgraph NS_Redbus["Namespace: redbus"]
+                    Ingress["Nginx Ingress\n(path-based routing)"]
+                    FE["Frontend Deployment\n(React + Nginx)\nReplicas: 2\nPort: 80"]
+                    BE["Backend Deployment\n(Node.js + Express)\nReplicas: 2\nPort: 5000"]
+                    ConfigMap["ConfigMap\n(redbus-config)"]
+                    Secrets["K8s Secrets\n(MongoDB URI, Stripe Key)"]
+                    FE_SVC["frontend-service\nClusterIP :80"]
+                    BE_SVC["backend-service\nClusterIP :5000"]
+                end
+
+                subgraph NS_Monitor["Namespace: monitoring"]
+                    Prometheus["Prometheus\n:9090"]
+                    Grafana["Grafana\n:3000"]
+                    NodeExp["Node Exporter"]
+                    KSM["Kube State Metrics"]
+                end
+            end
+
+            subgraph PrivSubnet["Private Subnets"]
+                NodeGroup["EKS Managed Node Group\n(redbus-nodes)"]
+            end
+        end
+
+        subgraph Storage["Data & Registry"]
+            ECR_FE["ECR\nredbus-frontend"]
+            ECR_BE["ECR\nredbus-backend"]
+            MongoDB["MongoDB Atlas\n(External)"]
+            S3["S3 Bucket\n(Terraform State)"]
+        end
+    end
+
+    subgraph Payments["💳 External Services"]
+        Stripe["Stripe API\n(Payment Processing)"]
+    end
+
+    Browser -->|"HTTPS"| Route53
+    Route53 --> ALB
+    ACM -.->|"TLS Termination"| ALB
+    ALB --> Ingress
+    Ingress -->|"path: /"| FE_SVC
+    Ingress -->|"path: /api"| BE_SVC
+    FE_SVC --> FE
+    BE_SVC --> BE
+    ConfigMap -.-> FE
+    ConfigMap -.-> BE
+    Secrets -.-> BE
+    BE -->|"MongoDB Driver"| MongoDB
+    BE -->|"Stripe SDK"| Stripe
+    FE -->|"API Calls /api/*"| BE_SVC
+    NodeGroup --- EKS
+    NATGateway --> PrivSubnet
+    ECR_FE -.->|"Pull Image"| FE
+    ECR_BE -.->|"Pull Image"| BE
+    NodeExp --> Prometheus
+    KSM --> Prometheus
+    Prometheus --> Grafana
+
+    classDef aws fill:#FF9900,stroke:#232F3E,color:#232F3E,stroke-width:2px
+    classDef k8s fill:#326CE5,stroke:#fff,color:#fff,stroke-width:2px
+    classDef app fill:#68BC71,stroke:#2d6a31,color:#fff,stroke-width:2px
+    classDef monitor fill:#E6522C,stroke:#fff,color:#fff,stroke-width:2px
+    classDef external fill:#6C63FF,stroke:#fff,color:#fff,stroke-width:2px
+    classDef user fill:#36A2EB,stroke:#fff,color:#fff,stroke-width:2px
+
+    class Route53,ACM,NATGateway,ALB,ECR_FE,ECR_BE,S3 aws
+    class Ingress,ConfigMap,Secrets,FE_SVC,BE_SVC,NodeGroup k8s
+    class FE,BE app
+    class Prometheus,Grafana,NodeExp,KSM monitor
+    class MongoDB,Stripe external
+    class Browser user
+```
+
+### 2. CI/CD Pipeline Architecture (Jenkins)
+
+```mermaid
+flowchart LR
+    subgraph Trigger["🔔 Trigger"]
+        GitPush["Git Push /\nWebhook"]
+    end
+
+    subgraph Jenkins["🔧 Jenkins Pipeline (11 Stages)"]
+        direction TB
+        S1["1️⃣ Clean\nWorkspace"]
+        S2["2️⃣ Setup ECR\nRegistry"]
+        S3["3️⃣ Ensure ECR\nRepositories"]
+        S4["4️⃣ Checkout\nSource Code"]
+
+        subgraph Parallel1["⚡ Parallel"]
+            S5a["5a. Frontend\nDependencies"]
+            S5b["5b. Backend\nDependencies"]
+        end
+
+        subgraph Parallel2["⚡ Parallel"]
+            S6a["6a. Frontend\nTests"]
+            S6b["6b. Backend\nTests"]
+        end
+
+        S7["7️⃣ SonarQube\nAnalysis"]
+        S8["8️⃣ Quality\nGate Check"]
+
+        subgraph Security["🔒 Security Scanning"]
+            S9["9a. OWASP\nDependency Check"]
+            S10["9b. Trivy FS\nSecurity Scan"]
+        end
+
+        subgraph Parallel3["⚡ Parallel"]
+            S11a["🐳 Build Frontend\nDocker Image"]
+            S11b["🐳 Build Backend\nDocker Image"]
+        end
+
+        subgraph Parallel4["⚡ Parallel"]
+            S12a["🔍 Trivy Scan\nFrontend Image"]
+            S12b["🔍 Trivy Scan\nBackend Image"]
+        end
+
+        S13["📤 Push Images\nto ECR"]
+        S14["🚀 Deploy to\nKubernetes (EKS)"]
+    end
+
+    subgraph Notify["📬 Notifications"]
+        Email["Email\nNotification"]
+        Reports["Archive\nReports"]
+    end
+
+    GitPush --> S1 --> S2 --> S3 --> S4
+    S4 --> Parallel1 --> Parallel2
+    Parallel2 --> S7 --> S8
+    S8 --> Security --> Parallel3
+    Parallel3 --> Parallel4 --> S13 --> S14
+    S14 --> Notify
+
+    classDef trigger fill:#6C63FF,stroke:#fff,color:#fff,stroke-width:2px
+    classDef stage fill:#326CE5,stroke:#fff,color:#fff,stroke-width:2px
+    classDef security fill:#E53935,stroke:#fff,color:#fff,stroke-width:2px
+    classDef parallel fill:#FF9800,stroke:#fff,color:#fff,stroke-width:2px
+    classDef notify fill:#4CAF50,stroke:#fff,color:#fff,stroke-width:2px
+
+    class GitPush trigger
+    class S1,S2,S3,S4,S7,S8,S13,S14 stage
+    class S9,S10 security
+    class S5a,S5b,S6a,S6b,S11a,S11b,S12a,S12b parallel
+    class Email,Reports notify
+```
+
+### 3. Kubernetes Cluster Architecture
+
+```mermaid
+flowchart TB
+    subgraph Internet["🌐 Internet"]
+        Client["Client Browser"]
+    end
+
+    subgraph EKSCluster["⎈ Amazon EKS Cluster (redbus-cluster)"]
+        subgraph IngressLayer["Ingress Layer"]
+            IC["Nginx Ingress Controller\n+ TLS (Let's Encrypt)"]
+        end
+
+        subgraph Redbus_NS["📦 Namespace: redbus"]
+            subgraph FrontendPods["Frontend Pods (Replicas: 2)"]
+                FE1["frontend-deployment\nReact + Nginx\nPort: 80\nCPU: 100m-200m\nMem: 128Mi-256Mi"]
+            end
+
+            subgraph BackendPods["Backend Pods (Replicas: 2)"]
+                BE1["backend-deployment\nNode.js + Express\nPort: 5000\nCPU: 200m-500m\nMem: 256Mi-512Mi"]
+            end
+
+            FE_Service["frontend-service\nClusterIP → :80"]
+            BE_Service["backend-service\nClusterIP → :5000"]
+
+            CM["📋 ConfigMap\nredbus-config"]
+            SEC["🔐 Secrets\nmongodb-uri\nstripe-secret-key"]
+        end
+
+        subgraph Monitor_NS["📊 Namespace: monitoring"]
+            PROM["Prometheus\nClusterIP :9090\n+ RBAC"]
+            GRAF["Grafana\n:3000\n+ Dashboard JSON"]
+            NE["Node Exporter\n(DaemonSet)"]
+            KSM2["Kube State Metrics\n(Deployment)"]
+        end
+
+        subgraph NodeGrp["🖥️ EKS Managed Node Group"]
+            N1["Worker Node 1"]
+            N2["Worker Node 2"]
+        end
+    end
+
+    subgraph External["☁️ External"]
+        MONGO["MongoDB Atlas"]
+        STRIPE["Stripe API"]
+        ECR["AWS ECR\n(Image Registry)"]
+    end
+
+    Client -->|"HTTPS :443"| IC
+    IC -->|"/ → :80"| FE_Service
+    IC -->|"/api → :5000"| BE_Service
+    FE_Service --> FE1
+    BE_Service --> BE1
+    CM -.->|"env vars"| FE1
+    CM -.->|"env vars"| BE1
+    SEC -.->|"secrets"| BE1
+    BE1 -->|":27017"| MONGO
+    BE1 -->|"HTTPS"| STRIPE
+    ECR -.->|"Pull"| FE1
+    ECR -.->|"Pull"| BE1
+    FE1 --- N1
+    BE1 --- N2
+    NE --> PROM
+    KSM2 --> PROM
+    BE1 -.->|"metrics :5000"| PROM
+    FE1 -.->|"metrics :80"| PROM
+    PROM --> GRAF
+
+    classDef ingress fill:#F06292,stroke:#fff,color:#fff,stroke-width:2px
+    classDef frontend fill:#42A5F5,stroke:#fff,color:#fff,stroke-width:2px
+    classDef backend fill:#66BB6A,stroke:#fff,color:#fff,stroke-width:2px
+    classDef config fill:#FFA726,stroke:#fff,color:#000,stroke-width:2px
+    classDef monitoring fill:#EF5350,stroke:#fff,color:#fff,stroke-width:2px
+    classDef external fill:#AB47BC,stroke:#fff,color:#fff,stroke-width:2px
+    classDef node fill:#78909C,stroke:#fff,color:#fff,stroke-width:2px
+
+    class IC ingress
+    class FE1,FE_Service frontend
+    class BE1,BE_Service backend
+    class CM,SEC config
+    class PROM,GRAF,NE,KSM2 monitoring
+    class MONGO,STRIPE,ECR external
+    class N1,N2 node
+```
+
+### 4. Infrastructure Provisioning (Terraform)
+
+```mermaid
+flowchart TB
+    subgraph TF["🟣 Terraform IaC"]
+        TFState["S3 Backend\n(Remote State +\nDynamoDB Lock)"]
+        Provider["AWS Provider\nus-east-1"]
+    end
+
+    subgraph VPC_Module["🔵 VPC Module"]
+        VPC["VPC\nredbus-vpc\nCIDR: configurable"]
+        PubSub["Public Subnets\n(2 AZs)\nTagged: kubernetes.io/role/elb"]
+        PrivSub["Private Subnets\n(2 AZs)\nTagged: internal-elb"]
+        NAT["NAT Gateway"]
+        IGW["Internet Gateway"]
+        DNS["DNS Hostnames\n+ Support Enabled"]
+    end
+
+    subgraph EKS_Module["🔵 EKS Module"]
+        Cluster["EKS Cluster\nredbus-cluster\nPublic + Private Endpoint"]
+        NodeGrp2["Managed Node Group\nredbus-nodes\nON_DEMAND"]
+        RBAC2["Cluster Creator\nAdmin Permissions"]
+    end
+
+    subgraph ECR_Resources["🟢 ECR Repositories"]
+        ECR_F["redbus-frontend\n(Scan on Push)"]
+        ECR_B["redbus-backend\n(Scan on Push)"]
+    end
+
+    subgraph Outputs["📤 Outputs"]
+        O1["cluster_endpoint"]
+        O2["cluster_name"]
+        O3["ecr_frontend_url"]
+        O4["ecr_backend_url"]
+        O5["vpc_id"]
+    end
+
+    TF --> Provider
+    TFState -.-> TF
+    Provider --> VPC_Module
+    Provider --> EKS_Module
+    Provider --> ECR_Resources
+    VPC --> PubSub
+    VPC --> PrivSub
+    VPC --> NAT
+    VPC --> IGW
+    VPC --> DNS
+    PubSub --> EKS_Module
+    PrivSub --> EKS_Module
+    Cluster --> NodeGrp2
+    Cluster --> RBAC2
+    EKS_Module --> Outputs
+    ECR_Resources --> Outputs
+
+    classDef tf fill:#7B42BC,stroke:#fff,color:#fff,stroke-width:2px
+    classDef vpc fill:#1976D2,stroke:#fff,color:#fff,stroke-width:2px
+    classDef eks fill:#326CE5,stroke:#fff,color:#fff,stroke-width:2px
+    classDef ecr fill:#FF9900,stroke:#232F3E,color:#232F3E,stroke-width:2px
+    classDef output fill:#4CAF50,stroke:#fff,color:#fff,stroke-width:2px
+
+    class TFState,Provider tf
+    class VPC,PubSub,PrivSub,NAT,IGW,DNS vpc
+    class Cluster,NodeGrp2,RBAC2 eks
+    class ECR_F,ECR_B ecr
+    class O1,O2,O3,O4,O5 output
+```
+
+### 5. Monitoring & Observability Architecture
+
+```mermaid
+flowchart LR
+    subgraph Targets["📡 Metric Sources"]
+        App_BE["Backend Pods\n(Node.js :5000)"]
+        App_FE["Frontend Pods\n(Nginx :80)"]
+        NE2["Node Exporter\n(DaemonSet)\nHost Metrics"]
+        KSM3["Kube State Metrics\nK8s Object Metrics"]
+        PROM_SELF["Prometheus\nSelf-Monitoring\n:9090"]
+    end
+
+    subgraph Prometheus_Stack["📊 Prometheus"]
+        PROM2["Prometheus Server\nScrape Interval: 15s\nCluster: redbus-cluster"]
+        SD["Kubernetes\nService Discovery\n(Pod Role)"]
+        Relabel["Relabel Configs\nFilter by:\n- app label\n- port number\n- namespace"]
+        RBAC3["RBAC\nClusterRole\n+ ServiceAccount"]
+    end
+
+    subgraph Grafana_Stack["📈 Grafana"]
+        GRAF2["Grafana Server\n:3000"]
+        DS["Datasource:\nPrometheus"]
+        Dash["Dashboard\n(JSON Provisioned)"]
+    end
+
+    subgraph Alerts["🔔 Alerting"]
+        AM["Alertmanager\n(Optional :9093)"]
+    end
+
+    App_BE -->|"metrics"| SD
+    App_FE -->|"metrics"| SD
+    NE2 -->|"metrics"| SD
+    KSM3 -->|"metrics"| SD
+    PROM_SELF -->|"metrics"| SD
+    SD --> Relabel --> PROM2
+    RBAC3 -.-> PROM2
+    PROM2 --> GRAF2
+    PROM2 -.-> AM
+    GRAF2 --> DS --> Dash
+
+    classDef source fill:#29B6F6,stroke:#fff,color:#fff,stroke-width:2px
+    classDef prom fill:#E65100,stroke:#fff,color:#fff,stroke-width:2px
+    classDef grafana fill:#F9A825,stroke:#000,color:#000,stroke-width:2px
+    classDef alert fill:#E53935,stroke:#fff,color:#fff,stroke-width:2px
+
+    class App_BE,App_FE,NE2,KSM3,PROM_SELF source
+    class PROM2,SD,Relabel,RBAC3 prom
+    class GRAF2,DS,Dash grafana
+    class AM alert
+```
+
+### 6. Application Architecture (React + Node.js)
+
+```mermaid
+flowchart TB
+    subgraph Frontend["⚛️ React Frontend (Port 80)"]
+        direction TB
+        Nginx["Nginx\n(Reverse Proxy + Static)"]
+        subgraph ReactApp["React App"]
+            Router["React Router\n(Routes.jsx)"]
+            Redux["Redux Store\n+ Thunk Middleware"]
+            subgraph Pages["Pages / Components"]
+                LP["Landing Page"]
+                SB["Select Bus"]
+                BD["Bus Details\n+ Seat Selection"]
+                PP["Payment Page\n(Stripe)"]
+                PF["Profile Page"]
+                BH["Bus Hire"]
+                NV["Navbar"]
+            end
+            subgraph ReduxSlices["Redux Slices"]
+                AuthSlice["auth/"]
+                BookSlice["BookBus/"]
+                BusSlice["busService/"]
+                FilterSlice["FilterAndSort/"]
+                RouteSlice["routes/"]
+            end
+        end
+    end
+
+    subgraph Backend["🟢 Node.js Backend (Port 5000)"]
+        direction TB
+        Express["Express.js Server\n(app.js)"]
+        subgraph API_Routes["API Routes"]
+            R_Booking["/api/booking"]
+            R_BookHire["/api/bookinghire"]
+            R_Bus["/api/bus"]
+            R_BusSvc["/api/busservice"]
+            R_Customer["/api/customer"]
+            R_Route["/api/route"]
+        end
+        subgraph Controllers["Controllers"]
+            C_Booking["booking.js"]
+            C_BookHire["bookingHire.js"]
+            C_Bus["bus.js"]
+            C_BusSvc["busservice.js"]
+            C_Customer["customer.js"]
+            C_Route["route.js"]
+        end
+        subgraph Models["Mongoose Models"]
+            M_Booking["Booking"]
+            M_BookHire["BookingHire"]
+            M_Bus["Bus"]
+            M_BusSvc["BusService"]
+            M_Customer["Customer"]
+            M_Route["Route"]
+        end
+    end
+
+    subgraph ExternalSvcs["☁️ External Services"]
+        MongoDB2["MongoDB Atlas"]
+        StripeAPI["Stripe API"]
+    end
+
+    Nginx --> Router
+    Router --> Pages
+    Pages --> Redux
+    Redux --> ReduxSlices
+    ReduxSlices -->|"HTTP /api/*"| Express
+    Express --> API_Routes
+    R_Booking --> C_Booking
+    R_BookHire --> C_BookHire
+    R_Bus --> C_Bus
+    R_BusSvc --> C_BusSvc
+    R_Customer --> C_Customer
+    R_Route --> C_Route
+    C_Booking --> M_Booking
+    C_BookHire --> M_BookHire
+    C_Bus --> M_Bus
+    C_BusSvc --> M_BusSvc
+    C_Customer --> M_Customer
+    C_Route --> M_Route
+    Models --> MongoDB2
+    C_Booking -.-> StripeAPI
+
+    classDef fe fill:#61DAFB,stroke:#222,color:#222,stroke-width:2px
+    classDef be fill:#68A063,stroke:#fff,color:#fff,stroke-width:2px
+    classDef ext fill:#FF6F00,stroke:#fff,color:#fff,stroke-width:2px
+    classDef redux fill:#764ABC,stroke:#fff,color:#fff,stroke-width:2px
+
+    class Nginx,Router,LP,SB,BD,PP,PF,BH,NV fe
+    class Express,R_Booking,R_BookHire,R_Bus,R_BusSvc,R_Customer,R_Route,C_Booking,C_BookHire,C_Bus,C_BusSvc,C_Customer,C_Route,M_Booking,M_BookHire,M_Bus,M_BusSvc,M_Customer,M_Route be
+    class MongoDB2,StripeAPI ext
+    class Redux,AuthSlice,BookSlice,BusSlice,FilterSlice,RouteSlice redux
+```
+
+### 7. Docker Build Architecture
+
+```mermaid
+flowchart LR
+    subgraph FE_Build["🐳 Frontend – Multi-Stage Build"]
+        FE_S1["Stage 1: Builder\nnode:18-alpine\nnpm install\nnpm run build"]
+        FE_S2["Stage 2: Production\nnginx:alpine\nCopy build artifacts\n+ nginx.conf"]
+        FE_S1 -->|"COPY --from=builder\n/app/build"| FE_S2
+    end
+
+    subgraph BE_Build["🐳 Backend – Single Stage"]
+        BE_S1["node:18-alpine\napk upgrade (CVE fix)\nCreate non-root user\nnpm ci --only=production\nRun as nodeuser"]
+    end
+
+    subgraph Security["🔒 Security Features"]
+        HC["Health Checks\n(30s interval)"]
+        NR["Non-Root User\n(Backend)"]
+        MS["Multi-Stage Build\n(Smaller Image)"]
+        CVE["Alpine CVE Patches"]
+    end
+
+    subgraph Registry["📦 AWS ECR"]
+        ECR_FE2["redbus-frontend\n:latest / :BUILD_NUM"]
+        ECR_BE2["redbus-backend\n:latest / :BUILD_NUM"]
+    end
+
+    FE_S2 -->|"docker push"| ECR_FE2
+    BE_S1 -->|"docker push"| ECR_BE2
+    HC -.-> FE_S2
+    HC -.-> BE_S1
+    NR -.-> BE_S1
+    MS -.-> FE_S2
+    CVE -.-> BE_S1
+
+    classDef build fill:#2196F3,stroke:#fff,color:#fff,stroke-width:2px
+    classDef sec fill:#F44336,stroke:#fff,color:#fff,stroke-width:2px
+    classDef reg fill:#FF9800,stroke:#fff,color:#fff,stroke-width:2px
+
+    class FE_S1,FE_S2,BE_S1 build
+    class HC,NR,MS,CVE sec
+    class ECR_FE2,ECR_BE2 reg
+```
 
 ---
 
