@@ -73,8 +73,11 @@ const connect = () => {
     console.log('MongoDB connection established.');
   });
 
-  // Use MONGODB_URI from environment or fallback to default
-  const mongoUri = process.env.MONGODB_URI || "mongodb+srv://redbus_db_user_1:umJkhSujb8dZoc2a@redbuscnstructweek.bujg6.mongodb.net/redbus?retryWrites=true&w=majority";
+  // Use MONGODB_URI from environment (must be set via .env or config.env)
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI environment variable is not set. Please configure it in config.env or your environment.");
+  }
 
   return mongoose.connect(mongoUri);
 };

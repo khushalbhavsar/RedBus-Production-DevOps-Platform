@@ -613,8 +613,8 @@ docker run -d -p 5000:5000 --name backend redbus-backend:latest
 
 # With environment variables
 docker run -d -p 5000:5000 \
-  -e MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/redbus" \
-  -e STRIPE_SECRET_KEY="sk_test_xxx" \
+  -e MONGODB_URI="<YOUR_MONGODB_URI>" \
+  -e STRIPE_SECRET_KEY="<YOUR_STRIPE_SECRET_KEY>" \
   -e PORT=5000 \
   --name backend \
   redbus-backend:latest

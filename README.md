@@ -779,7 +779,7 @@ npm install
 cp config.env.example config.env
 
 # Edit config.env with your MongoDB URI
-# MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/redbus
+# MONGODB_URI=<YOUR_MONGODB_URI>
 
 # Start backend server
 npm start
@@ -1353,8 +1353,8 @@ HOST=0.0.0.0
 NODE_ENV=production
 
 # Database
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/redbus
-DATABASE=mongodb+srv://username:<PASSWORD>@cluster.mongodb.net/redbus
+MONGODB_URI=<YOUR_MONGODB_URI>
+DATABASE=<YOUR_MONGODB_URI>
 DATABASE_PASSWORD=your_password
 
 # Stripe Payment
@@ -1398,7 +1398,7 @@ stripe-secret-key: <base64-encoded-key>
 
 ```bash
 # Check MongoDB URI format
-# Correct: mongodb+srv://user:pass@cluster.mongodb.net/dbname
+# Correct: mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<dbname>
 # Check network access in MongoDB Atlas (allow 0.0.0.0/0 for development)
 ```
 

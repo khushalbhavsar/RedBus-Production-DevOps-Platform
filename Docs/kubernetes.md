@@ -757,7 +757,7 @@ metadata:
   name: redbus-secrets
 type: Opaque
 stringData:
-  mongodb-uri: "mongodb+srv://username:password@cluster.mongodb.net/redbus"
+  mongodb-uri: "<YOUR_MONGODB_URI>"
   stripe-secret-key: "your-stripe-secret-key"
 ```
 
